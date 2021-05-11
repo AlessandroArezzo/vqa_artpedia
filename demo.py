@@ -67,7 +67,7 @@ with torch.no_grad():
         answer_idx = (a == 1).nonzero(as_tuple=True)[1]
         answer_string = ""
         for idx in answer_idx:
-            answer_string += dictionary.idx2word[idx]
+            answer_string += dictionary.idx2word[idx] + " "
         for answer_word in answer_string.split(" "):
             if answer_word == pred_word:
                 score += 1
