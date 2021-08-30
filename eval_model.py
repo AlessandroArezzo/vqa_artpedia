@@ -10,14 +10,20 @@ import pickle
 import os
 import json
 import argparse
+import pandas as pd
+import numpy as np
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--features_path', type=str, default='./data/dict_features_artpedia.pkl',
-                    help='features dictionary pickle file path')
+parser.add_argument('--data_root', type=str, default='./data',
+                    help='data root features dictionary pickle file')
+parser.add_argument('--dataset', type=str, default='artpedia',
+                    help='type of images to considered: artepdia or artpedia_dt')
 opt = parser.parse_args()
-
+features_path = os.path.join(opt.data_root, "dict_features_"+opt.dataset+".pkl")
+correct_rslt_path = os.path.join(opt.data_root, "output", "correct_pred_"+opt.dataset+".csv")
+error_rslt_path = os.path.join(opt.data_root, "output", "error_pred_"+opt.dataset+".csv")
 idx2ans = pickle.load(open(
     './data/dict_ans.pkl',
     'rb'))
@@ -41,37 +47,53 @@ with open('./data/artpedia_bottomup_qa.json') as f:
   question_answer_dict = json.load(f)
 with open('./data/artpedia_visual_qa_cap.json') as f:
   question_answer_dict.update(json.load(f))
-
-with open(opt.features_path, 'rb') as handle:
+test = question_answer_dict['3']
+with open(features_path, 'rb') as handle:
     features_dict = pickle.load(handle)
 
 with open('./data/dict_ans.pkl', 'rb') as handle:
     idx2ans = pickle.load(handle)[0]
+
 batch_size = 1
 test_loader = dataset.ArtPediaDataset(features_dict=features_dict, question_answer_dict=question_answer_dict,
                                       dictionary=dictionary)
 dataloader = DataLoader(test_loader, batch_size, shuffle=False, num_workers=1)
 
-with torch.no_grad():
+output_columns = ['idx_image', 'question_token', 'question', 'answer', 'pred']
+out_df_correct_rslts = pd.DataFrame(columns=output_columns)
+out_df_error_rslts = pd.DataFrame(columns=output_columns)
 
+with torch.no_grad():
     score = 0
-    for v, q, a in tqdm(iter(dataloader)):
+    for image_idx, features, question_token, question, answer_token, answer in tqdm(iter(dataloader)):
         #v = Variable(v, volatile=True).cuda()
         #q = Variable(q, volatile=True).cuda()
-        v = Variable(v, volatile=True)
-        q = Variable(q, volatile=True)
+        v = Variable(features, volatile=True)
+        q = Variable(question_token, volatile=True)
         pred = model(q, v)
-        #TODO get the answer idx
         pred_ans_idx = torch.argmax(pred, dim=1)
         pred_word = idx2ans[pred_ans_idx]
-        answer_idx = (a == 1).nonzero(as_tuple=True)[1]
+        answer_idx = (answer_token == 1).nonzero(as_tuple=True)[1]
         answer_string = ""
         for idx in answer_idx:
             answer_string += dictionary.idx2word[idx] + " "
+        data_to_add = [image_idx[0], question_token.tolist()[0], question, answer[0], pred_word]
+        data_df_scores = np.hstack((np.array(data_to_add).reshape(1, -1)))
+        correct_pred = False
         for answer_word in answer_string.split(" "):
             if answer_word == pred_word:
                 score += 1
+                out_df_correct_rslts = out_df_correct_rslts.append(pd.Series(data_df_scores.reshape(-1),
+                                                                 index=out_df_correct_rslts.columns),
+                                                                 ignore_index=True)
+                out_df_correct_rslts.to_csv(correct_rslt_path, index=False, header=True)
+                correct_pred = True
                 break
+        if not correct_pred:
+            out_df_error_rslts = out_df_error_rslts.append(pd.Series(data_df_scores.reshape(-1),
+                                                                         index=out_df_error_rslts.columns),
+                                                                         ignore_index=True)
+            out_df_error_rslts.to_csv(error_rslt_path, index=False, header=True)
     accuracy = (score/len(dataloader))*100
     print("ACCURACY: "+"{:.2f}".format(accuracy)+"%")
 

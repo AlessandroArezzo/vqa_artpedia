@@ -187,17 +187,20 @@ class ArtPediaDataset(Dataset):
             try:
                 for question_answer in question_answer_dict[str(int(features_idx))][0]:
                     current_dict = {}
+                    current_dict["image_idx"] = str(int(features_idx))
                     current_dict["features"] = current_features
                     question = question_answer["question"]
+                    current_dict["question"] = question
                     question = dictionary.tokenize(question, False)
                     question = torch.from_numpy(np.array(question))
-                    current_dict["question"] = question
+                    current_dict["question_tokenized"] = question
                     answer = question_answer["answer"]
+                    current_dict["answer"] = answer
                     answer_token = dictionary.tokenize(answer, False)
                     one_hot_answer = np.zeros(3129)
                     for idx in answer_token:
                         one_hot_answer[idx] = 1
-                    current_dict["answer"] = one_hot_answer
+                    current_dict["answer_tokenized"] = one_hot_answer
                     imgs_dict.append(current_dict)
             except KeyError:
                 continue
@@ -208,7 +211,10 @@ class ArtPediaDataset(Dataset):
         self.dataset = imgs_dict
 
     def __getitem__(self, index):
-        return self.dataset[index]["features"], self.dataset[index]["question"], self.dataset[index]["answer"]
+        return self.dataset[index]["image_idx"], self.dataset[index]["features"], \
+               self.dataset[index]["question_tokenized"], self.dataset[index]["question"],\
+               self.dataset[index]["answer_tokenized"],\
+               self.dataset[index]["answer"]
 
     def __len__(self):
         return len(self.dataset)
